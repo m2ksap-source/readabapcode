@@ -194,8 +194,3 @@ not reachable with a `client_credentials` token.
 | `Missing environment variable 'ABAP_HOST'` | `.env` not saved, or the command was run from the wrong folder. |
 | Request hangs, then times out | `ABAP_HOST` wrong, or the trial system is stopped - restart it in the BTP cockpit. |
 
-## Possible extensions
-
-- A `search` command using `/sap/bc/adt/repository/informationsystem/search`.
-- Resolving a package and reading all of its objects.
-- Passing the source to another analysis tool.
