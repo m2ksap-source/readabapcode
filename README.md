@@ -1,66 +1,73 @@
 # readabapcode
 
-Read ABAP source code from an SAP BTP ABAP Environment trial with a headless
-Python script. It calls the same ADT (ABAP Development Tools) REST API that
-Eclipse uses and authenticates via the OAuth 2.0 password grant, so no browser
-or SSO prompt is involved.
+## Overview
 
-The tool is read-only: it only issues `GET` requests and cannot lock or modify
-anything in the system.
+`readabapcode` is a command-line utility that retrieves ABAP source code from an
+SAP BTP ABAP Environment trial system without a graphical development
+environment. It communicates with the ABAP Development Tools (ADT) REST API,
+the same interface used by ADT in Eclipse, and authenticates non-interactively
+through the OAuth 2.0 resource owner password credentials grant. No browser
+session or single sign-on prompt is required.
 
-## Contents
+The utility performs read operations only. It issues `GET` requests exclusively
+and therefore cannot lock, modify, or delete any object in the target system.
 
-```
-readabapcode/
-├── abap_session.py     # OAuth token handling + one authenticated GET
-├── check_connection.py # connectivity/authentication check
-├── read_abap.py        # CLI: read a class / interface / include / function module
-├── .env.example        # connection template
-└── requirements.txt
-```
+## Repository contents
 
-## Requirements
+| File | Purpose |
+|------|---------|
+| `abap_session.py` | Acquisition and caching of the OAuth access token and a single authenticated `GET` helper. |
+| `check_connection.py` | Verification of connectivity and authentication against the target system. |
+| `read_abap.py` | Command-line interface for reading the source of a class, interface, include, or function module. |
+| `.env.example` | Template for the required connection parameters. |
+| `requirements.txt` | Python dependencies. |
 
-- An SAP BTP ABAP Environment trial ("ABAP Cloud Developer Trial"). The
-  configured user needs developer authorization - the same user used for ADT
-  in Eclipse.
+## Prerequisites
+
+- An SAP BTP ABAP Environment trial system ("ABAP Cloud Developer Trial"). The
+  account used for authentication must hold developer authorization equivalent
+  to that required for ADT in Eclipse.
 - Python 3.9 or later.
-- `requests` and `python-dotenv`.
+- The Python packages `requests` and `python-dotenv`.
 
-## Authentication
+## Authentication model
 
-ADT in Eclipse logs in through a browser via SAML, which a script cannot do.
-This tool uses the OAuth 2.0 password grant against the XSUAA instance in front
-of the ABAP system:
+ADT in Eclipse authenticates through a browser-based SAML flow, which is not
+available to a non-interactive script. This utility instead requests a token
+from the XSUAA instance associated with the ABAP system, using the OAuth 2.0
+password grant:
 
-1. `POST {OAUTH_URL}/oauth/token` with
-   - `grant_type=password`
-   - `username` / `password` - the BTP/ABAP developer login
-   - HTTP basic auth - the `clientid` / `clientsecret` from a service key
-2. XSUAA returns a bearer token carrying the user's ABAP identity and
+1. A `POST` request is sent to `{OAUTH_URL}/oauth/token` containing:
+   - `grant_type=password`;
+   - the `username` and `password` of the BTP/ABAP developer account;
+   - HTTP Basic authentication using the `clientid` and `clientsecret` from a
+     service key.
+2. XSUAA returns a bearer token that carries the developer's ABAP identity and
    authorizations.
-3. Each ADT call sends `Authorization: Bearer <token>`.
+3. Each subsequent ADT request includes the header
+   `Authorization: Bearer <token>`.
 
 Because the token represents a named user, no Communication Arrangement is
-required; the user's existing developer authorizations apply.
+required. The user's existing developer authorizations govern access.
 
-## Setup
+## Installation and configuration
 
 ### 1. Create a service key
 
-BTP cockpit → subaccount → Instances and Subscriptions → the ABAP environment
-instance → Service Keys → Create.
+In the SAP BTP cockpit, navigate to the subaccount, then to
+**Instances and Subscriptions**, open the ABAP environment instance, and select
+**Service Keys → Create**.
 
-Four values are needed from the key:
+The following values are required from the service key:
 
-| Service key field   | Variable        |
-|---------------------|-----------------|
-| `url` (root)        | `ABAP_HOST`     |
-| `uaa.url`           | `OAUTH_URL`     |
-| `uaa.clientid`      | `CLIENT_ID`     |
-| `uaa.clientsecret`  | `CLIENT_SECRET` |
+| Service key field  | Environment variable |
+|--------------------|----------------------|
+| `url` (root)       | `ABAP_HOST`          |
+| `uaa.url`          | `OAUTH_URL`          |
+| `uaa.clientid`     | `CLIENT_ID`          |
+| `uaa.clientsecret` | `CLIENT_SECRET`      |
 
-Relevant part of a service key:
+The relevant section of a service key is structured as follows:
 
 ```json
 {
@@ -73,7 +80,7 @@ Relevant part of a service key:
 }
 ```
 
-### 2. Install
+### 2. Install dependencies
 
 ```powershell
 cd readabapcode
@@ -82,9 +89,9 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-### 3. Configure
+### 3. Provide connection parameters
 
-Copy `.env.example` to `.env` and fill in the values:
+Copy `.env.example` to `.env` and supply the values:
 
 ```ini
 ABAP_HOST=https://your-subdomain.abap.us10.hana.ondemand.com
@@ -97,41 +104,49 @@ ABAP_USERNAME=your_btp_username
 ABAP_PASSWORD=your_btp_password
 ```
 
-`ABAP_HOST`, `OAUTH_URL`, `CLIENT_ID`, `CLIENT_SECRET`, `ABAP_USERNAME` and
-`ABAP_PASSWORD` are all required; a missing value fails immediately with a
-clear message. `SAP_CLIENT` defaults to `100`.
+`ABAP_HOST`, `OAUTH_URL`, `CLIENT_ID`, `CLIENT_SECRET`, `ABAP_USERNAME`, and
+`ABAP_PASSWORD` are mandatory. If any of them is absent, the utility terminates
+immediately with a descriptive message. `SAP_CLIENT` is optional and defaults
+to `100`.
 
-`.env` is listed in `.gitignore` and must not be committed.
+The `.env` file contains credentials. It is excluded by `.gitignore` and must
+not be committed to version control.
 
 ## Usage
 
-### Check the connection
+### Verifying the connection
 
 ```powershell
 python check_connection.py
 ```
+
+Expected output:
 
 ```
 OK - connected to https://<subdomain>.abap.us10.hana.ondemand.com
      ADT discovery document is 2211 bytes
 ```
 
-### Read source
+### Reading source code
 
 ```powershell
 python read_abap.py class     ZCL_POC_REVIEW_DEMO
 python read_abap.py interface ZIF_HELLO
 python read_abap.py include   ZDEMO_INCLUDE
 python read_abap.py fm        Z_READ_STUFF ZDEMO_FUGR
+```
 
-# write to a file instead of stdout
+To write the source to a file rather than standard output, supply the `--out`
+option:
+
+```powershell
 python read_abap.py class ZCL_POC_REVIEW_DEMO --out ZCL_POC_REVIEW_DEMO.abap
 ```
 
-Object names are case-insensitive. Run the commands from the project folder so
-`.env` is picked up.
+Object names are case-insensitive. Commands must be executed from the project
+directory so that the `.env` file is loaded.
 
-Example output:
+### Example output
 
 ```abap
 CLASS zcl_poc_review_demo DEFINITION
@@ -158,39 +173,41 @@ ENDCLASS.
 
 ## ADT endpoints
 
-Reading source is a single `GET`; only the path changes per object type.
+Retrieval of source code is performed with a single `GET` request. Only the
+request path differs between object types.
 
-| Object    | ADT path |
-|-----------|----------|
-| Class     | `/sap/bc/adt/oo/classes/{name}/source/main` |
+| Object type | ADT path |
+|-------------|----------|
+| Class | `/sap/bc/adt/oo/classes/{name}/source/main` |
 | Interface | `/sap/bc/adt/oo/interfaces/{name}/source/main` |
-| Include   | `/sap/bc/adt/programs/includes/{name}/source/main` |
-| Function  | `/sap/bc/adt/functions/groups/{group}/fmodules/{name}/source/main` |
+| Include | `/sap/bc/adt/programs/includes/{name}/source/main` |
+| Function module | `/sap/bc/adt/functions/groups/{group}/fmodules/{name}/source/main` |
 
 ## Implementation notes
 
-- The access token is cached in memory and refreshed one minute before expiry,
-  so a run that reads many objects authenticates once.
-- `sap-client` is sent on every request.
-- ADT returns source with `CRLF` line endings. `abap_session.py` normalises to
-  `LF`; `read_abap.py` writes files with `newline="\n"`.
+- The access token is held in memory and refreshed one minute before its
+  expiry, so a session that reads many objects authenticates only once.
+- The `sap-client` query parameter is included in every request.
+- ADT returns source code with `CRLF` line endings. `abap_session.py`
+  normalizes these to `LF`, and `read_abap.py` writes files using
+  `newline="\n"`.
 
-## Unattended jobs
+## Unattended operation
 
-This tool uses the password grant and needs a real BTP/ABAP login in `.env`,
-which suits local use and the trial. For a scheduled job where storing a
-personal password is not acceptable, the alternative is a communication user
-with a Communication Arrangement and the `client_credentials` grant. That is a
-separate setup and not covered here; on the trial the ADT source endpoints are
-not reachable with a `client_credentials` token.
+This utility relies on the password grant and therefore requires a valid
+BTP/ABAP user account in the `.env` file, which is appropriate for local use
+and for trial systems. For a scheduled process in which storing an individual
+user's password is not acceptable, the alternative is a communication user
+combined with a Communication Arrangement and the `client_credentials` grant.
+That configuration is outside the scope of this project. On the trial landscape,
+the ADT source endpoints are not accessible with a `client_credentials` token.
 
 ## Troubleshooting
 
-| Symptom | Cause / fix |
-|---------|-------------|
-| `OAuth token request failed (401)` | Wrong `CLIENT_ID` / `CLIENT_SECRET` / `OAUTH_URL`, or wrong `ABAP_USERNAME` / `ABAP_PASSWORD`. |
-| `403 for /sap/bc/adt/...` | The user lacks ADT / developer authorization for that object. |
-| `Object not found` | Name typo, or the object is in a different system or client. |
-| `Missing environment variable 'ABAP_HOST'` | `.env` not saved, or the command was run from the wrong folder. |
-| Request hangs, then times out | `ABAP_HOST` wrong, or the trial system is stopped - restart it in the BTP cockpit. |
-
+| Symptom | Probable cause and resolution |
+|---------|-------------------------------|
+| `OAuth token request failed (401)` | Incorrect `CLIENT_ID`, `CLIENT_SECRET`, or `OAUTH_URL`, or incorrect `ABAP_USERNAME` or `ABAP_PASSWORD`. |
+| `403 for /sap/bc/adt/...` | The user does not hold ADT or developer authorization for the requested object. |
+| `Object not found` | The object name is misspelled, or the object resides in a different system or client. |
+| `Missing environment variable 'ABAP_HOST'` | The `.env` file has not been saved, or the command was executed outside the project directory. |
+| Request does not return and eventually times out | `ABAP_HOST` is incorrect, or the trial system is stopped and must be restarted in the SAP BTP cockpit. |
